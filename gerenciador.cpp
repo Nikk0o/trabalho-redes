@@ -156,5 +156,5 @@ void gerenciador::listen() {
 	thread thread_listen([this](){listen_func(*this, this->srv.get());});
 	thread_listen.detach();
 
-	srv->stop();
+	// srv->stop();
 }
