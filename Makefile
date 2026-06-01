@@ -5,7 +5,7 @@ PORTA=6767
 .PHONY: clean run
 
 gerenciador.out: server.cpp server.hpp protocol.hpp gerenciador.cpp
-	$(CC) gerenciador.cpp server.cpp -o gerenciador.out
+	$(CC) gerenciador.cpp server.cpp -o gerenciador.out -g
 
 run:
 	./gerenciador.out $(PORTA)

@@ -58,7 +58,7 @@ void server::start() {
 	if (bind(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))
 		< 0) {
 		perror("Erro ao fazer bind() no socket do servidor");
-		sem_unlink("redes_server_sem");
+		sem_destroy(semaphore);
 		abort(); // ?
 	}
 
@@ -82,7 +82,7 @@ void server::stop() {
 	while (clients.size())
 		close_connection(clients[0]);
 
-	sem_unlink("redes_server_sem");
+	sem_close(semaphore);
 
 	cout << name << " Finalizado." << std::endl;
 }

@@ -16,7 +16,7 @@ class gerenciador {
 	public:
 		gerenciador(int);
 
-		packet* get_packet(int);
+		unique_ptr<packet> get_packet(int);
 		void send_packet(int, packet);
 
 		// Começa a aguardar conexões e
@@ -60,7 +60,7 @@ string get_until(int fd, char stop, server* srv) {
 
 
 	// Lê um pacote recebido
-packet* gerenciador::get_packet(int fd) {
+unique_ptr<packet> gerenciador::get_packet(int fd) {
 
 	string protocolo = "SMARTCLASS/1.0";
 	string tipo_msg = "TIPO_MSG: ";
@@ -78,28 +78,28 @@ packet* gerenciador::get_packet(int fd) {
 	string tipo = get_until(fd, '\n', srv.get());
 	if (!string("REQ_CON").compare(tipo)) {
 		// Processa pacote de requisição de conexão
-		req_con* req = new req_con();
+		unique_ptr<req_con> req(new req_con());
 		return req;
 	}
 	else if (!string("SENS_PRESENCA").compare(tipo)) {
 		// Processa mensagem do sensor de presença
-		sens_presenca* presenca = new sens_presenca();
+		unique_ptr<sens_presenca> presenca(new sens_presenca());
 		return presenca;
 	}
 	else if (!string("SENS_CARTAO").compare(tipo)) {
 		// Processa mensagem do sensor de cartão
-		sens_cartao* sc = new sens_cartao();
+		unique_ptr<sens_cartao>sc(new sens_cartao());
 		return sc;
 	}
 	else if (!string("SENS_CHAVE").compare(tipo)) {
 		// Processa mensgem do sensor de chave
-		sens_chave* sc = new sens_chave();
+		unique_ptr<sens_chave> sc(new sens_chave());
 		return sc;
 	}
 	else if (!string("GET_PRESENCA").compare(tipo)) {
 		// Processa mensagem de requisição de
 		// lista de presença
-		get_presenca* gp = new get_presenca();
+		unique_ptr<get_presenca>gp(new get_presenca());
 		return gp;
 	}
 	else
@@ -126,8 +126,8 @@ void listen_func(gerenciador& ger, server* srv) {
 			abort(); // ?
 		}
 
-		packet* p = ger.get_packet(connct_sock);
-		req_con* handsh = dynamic_cast<req_con*>(p);
+		shared_ptr<packet> p = move(ger.get_packet(connct_sock));
+		shared_ptr<req_con> handsh = dynamic_pointer_cast<req_con>(p);
 		if (!handsh) {
 			// Não segue o protocolo
 			//
@@ -153,8 +153,8 @@ void listen_func(gerenciador& ger, server* srv) {
 
 
 void gerenciador::listen() {
-	thread thread_listen([this](){listen_func(*this, this->srv.get());});
-	thread_listen.detach();
+	//thread thread_listen([this](){listen_func(*this, this->srv.get());});
+	//thread_listen.detach();
 
 	// srv->stop();
 }
