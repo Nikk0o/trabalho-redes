@@ -1,8 +1,11 @@
 #include <iostream>
 #include <thread>
 
+#include <cstdio>
+#include <fcntl.h> 
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "server.hpp"
 
@@ -20,8 +23,25 @@ server::server(const char* name, int port) {
 	// gerenciador.
 	// Socket ipv4 TCP
 	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0)
+	if (sockfd < 0) {
+		perror("Erro ao abrir socket");
 		abort(); // ?
+	}
+
+	// Cria um semáforo para que chamadas de função
+	// de abrir e fechar sockets possam ser execu-
+	// tadas em threads diferentes
+	sem_t* sem = sem_open("redes_server_sem", O_RDWR | O_CREAT, 0);
+	if (sem == SEM_FAILED)
+		sem_unlink("redes_server_sem");
+
+	sem = sem_open("redes_server_sem", O_RDWR | O_CREAT, 0);
+	if (sem == SEM_FAILED) {
+		perror("Erro ao criar semáforo");
+		abort(); // ?
+	}
+
+	semaphore = sem;
 }
 
 
@@ -37,14 +57,40 @@ void server::start() {
 	addr.sin_port = port;
 	if (bind(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))
 		< 0) {
+		perror("Erro ao fazer bind() no socket do servidor");
+		sem_unlink("redes_server_sem");
 		abort(); // ?
 	}
+
+	up = true;
 
 	cout << name << " iniciado na porta " << port << "." << std::endl;
 }
 
 
-void server::stop() {}
+void server::stop() {
+	if (!up)
+		return;
+
+	cout << "Parando " << name << "." << std::endl;
+
+	up = false;
+	close(sockfd);
+
+	// faz isso e força as threads a terminarem talvez
+	// ou só dá join
+	while (clients.size())
+		close_connection(clients[0]);
+
+	sem_unlink("redes_server_sem");
+
+	cout << name << " Finalizado." << std::endl;
+}
+
+
+server::~server() {
+	stop();
+}
 
 
 int server::wait_connection() {
@@ -58,8 +104,16 @@ int server::wait_connection() {
 	sockaddr_in addr;
 	socklen_t addr_size;
 	int new_socket = accept(sockfd, reinterpret_cast<sockaddr*>(&addr), &addr_size);
-	if (new_socket < 0)
+	if (new_socket < 0) {
+		perror("Erro ao criar socket de cliente");
+		sem_unlink("redes_server_sem");
 		abort(); // ?
+	}
+
+	// Adiciona a conexão à lista de clientes conectados.
+	sem_wait(semaphore);
+	clients.push_back(new_socket);
+	sem_post(semaphore);
 
 	cout << "Conexão estabelecida na socket " << new_socket << "." << std::endl;
 
@@ -70,69 +124,28 @@ int server::wait_connection() {
 
 	// Fecha a conexão com um cliente específico.
 	// Não sei em que caso seria útil no projeto.
-void server::close_connection(int fd) {}
+void server::close_connection(int fd) {
+	if (fd == sockfd)
+		return;
 
+	for (int i = 0; i < clients.size(); i++) {
+		if (clients[i] == fd) {
+			// Remove a conexão da lista.
+			sem_wait(semaphore);
+			clients.erase(clients.begin()+i);
+			sem_post(semaphore);
 
-	// Envia um pacote
-void send_packet(int fd, packet& p) {
-	string p_str = p.to_string();
-	const char* c_str = p_str.c_str();
-	send(fd, c_str, p_str.size(), 0);
-
-	delete[] c_str;
+			return;
+		}
+	}
 }
 
 
-	// Lê o socket até que um caractere stop seja
-	// encontrado.
-string get_until(int fd, char stop) {
-	char c;
-	string result;
-	result.reserve(20);
-
-	recv(fd, static_cast<void*>(&c), 1, 0);
-	while(c != stop) {
-		result += c;
-		recv(fd, static_cast<void*>(&c), 1, 0);
-	}
-
-	result.shrink_to_fit();
-	return result;
+void server::send(int fd, const void* buf, size_t size) {
+	::send(fd, buf, size, 0);
 }
 
 
-	// Lê um pacote recebido
-packet get_packet(int fd) {
-	string protocolo = "SMARTCLASS/1.0";
-	string tipo_msg = "TIPO_MSG: ";
-
-	// Lê o cabeçalho
-	string protocolo_rec = get_until(fd, '\n');
-	if (protocolo_rec.compare(protocolo))
-	{ /* Cabeçalho errado */ }
-
-	// Lê tipo_msg
-	string tipo_msg_rec = get_until(fd, ' ');
-	if (tipo_msg_rec.compare(tipo_msg))
-	{ /* Cabeçalho errado */ }
-
-	string tipo = get_until(fd, '\n');
-	if (!string("REQ_CON").compare(tipo)) {
-		// Processa pacote de requisição de conexão
-	}
-	else if (!string("SENS_PRESENCA").compare(tipo)) {
-		// Processa mensagem do sensor de presença
-	}
-	else if (!string("SENS_CARTAO").compare(tipo)) {
-		// Processa mensagem do sensor de cartão
-	}
-	else if (!string("SENS_CHAVE").compare(tipo)) {
-		// Processa mensgem do sensor de chave
-	}
-	else if (!string("GET_PRESENCA").compare(tipo)) {
-		// Processa mensagem de requisição de
-		// lista de presença
-	}
-	else
-	{ /* Mensagem não existe */ }
+size_t server::receive(int fd, void* buf, size_t max) {
+	return recv(fd, buf, max, 0);
 }
