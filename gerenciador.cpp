@@ -1,9 +1,15 @@
 #include "server.hpp"
 
+#include <cstring>
 #include <iostream>
+#include <list>
+#include <malloc.h>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#include <fcntl.h>
+#include <semaphore.h>
 
 
 using namespace std;
@@ -13,8 +19,14 @@ class gerenciador {
 	unique_ptr<server> srv;
 	vector<pair<int, string>> lista_presenca;
 
+	// semáforo que vai ser usado para acessar
+	// os dados compartilhados do gerenciador
+	// pelas threads.
+	sem_t* sem;
+
 	public:
 		gerenciador(int);
+		~gerenciador();
 
 		unique_ptr<packet> get_packet(int);
 		void send_packet(int, packet);
@@ -26,6 +38,11 @@ class gerenciador {
 
 
 int main(int argc, char* argv[]) {
+	if (argc < 2) {
+		cout << "Coloque a porta desejada no primeiro parâmetro do programa." << std::endl;
+		exit(1);
+	}
+
 	int port = stoi(argv[1]);
 	gerenciador ger(port);
 	ger.listen();
@@ -36,8 +53,31 @@ int main(int argc, char* argv[]) {
 
 	// Inicializa o gerenciador e o servidor
 gerenciador::gerenciador(int port) {
-	srv = unique_ptr<server>(new server("Gerenciador", port));
-	srv->start();
+	try {
+		sem = sem_open("ger_semaforo", O_CREAT);
+		if (sem == SEM_FAILED) {
+			sem_unlink("ger_semaforo");
+			sem = sem_open("ger_semaforo", O_CREAT);
+		}
+
+		if (sem == SEM_FAILED)
+			throw runtime_error("Erro ao criar o semáforo do gerenciador");
+
+		srv = unique_ptr<server>(new server("Gerenciador", port));
+		srv->start();
+	}
+	catch (exception e) {
+		perror(e.what());
+		srv->stop();
+		exit(1);
+	}
+
+	sem_post(sem);
+}
+
+
+gerenciador::~gerenciador() {
+	sem_close(sem);
 }
 
 
@@ -103,7 +143,7 @@ unique_ptr<packet> gerenciador::get_packet(int fd) {
 		return gp;
 	}
 	else
-	{ throw 1; /* Mensagem não existe */ }
+	{ return unique_ptr<packet>(nullptr); /* Mensagem não existe */ }
 }
 
 
@@ -115,15 +155,18 @@ void gerenciador::send_packet(int fd, packet p) {
 
 
 void listen_func(gerenciador& ger, server* srv) {
+	int i = 0;
 	while(1) {
-		// Se o servidor, parar, retorne.
-		if (!srv->is_up())
-			return;
+		int connct_sock;
 
-		int connct_sock = srv->wait_connection();
-		if (connct_sock < 0) {
-			srv->stop();
-			abort(); // ?
+		try {
+			connct_sock = srv->wait_connection();
+			if (connct_sock < 0)
+				continue;
+		}
+		catch (exception e) {
+			perror(e.what());
+			return;
 		}
 
 		shared_ptr<packet> p = move(ger.get_packet(connct_sock));
@@ -137,7 +180,13 @@ void listen_func(gerenciador& ger, server* srv) {
 
 		con_ack response;
 		response.status = true;
-		ger.send_packet(connct_sock, response);
+		try {
+			ger.send_packet(connct_sock, response);
+		}
+		catch (exception e) {
+			perror(e.what());
+			return;
+		}
 
 		string funcao = string(handsh->funcao);
 		if (!funcao.compare("")) {
@@ -153,8 +202,8 @@ void listen_func(gerenciador& ger, server* srv) {
 
 
 void gerenciador::listen() {
-	//thread thread_listen([this](){listen_func(*this, this->srv.get());});
-	//thread_listen.detach();
+	thread thread_listen([this](){listen_func(*this, this->srv.get());});
 
-	// srv->stop();
+	thread_listen.join();
+	cout << "Gerenciador parou de ouvir." << std::endl;
 }

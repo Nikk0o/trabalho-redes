@@ -2,6 +2,7 @@
 #include <thread>
 
 #include <cstdio>
+#include <exception>
 #include <fcntl.h> 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -13,6 +14,8 @@
 using std::size_t;
 using std::string;
 using std::cout;
+using std::runtime_error;
+using std::invalid_argument;
 
 
 server::server(const char* name, int port) {
@@ -22,26 +25,38 @@ server::server(const char* name, int port) {
 	// Cria o socket para os clientes se conectarem ao
 	// gerenciador.
 	// Socket ipv4 TCP
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	//
+	// Coloca também o socket em modo non-blocking, para
+	// que as chamadas a recv() e accept() não bloqueiem
+	// threads, assim evitando vazamento de memória quando
+	// terminar o programa.
+	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
 	if (sockfd < 0) {
-		perror("Erro ao abrir socket");
-		abort(); // ?
+		if (errno == EACCES || errno == EMFILE
+			|| errno == ENFILE || errno == ENOMEM
+			|| errno == ENOBUFS)
+
+			throw runtime_error("Erro ao criar socket");
+		else
+			throw invalid_argument("Erro ao criar socket");
 	}
 
 	// Cria um semáforo para que chamadas de função
 	// de abrir e fechar sockets possam ser execu-
 	// tadas em threads diferentes
 	sem_t* sem = sem_open("redes_server_sem", O_RDWR | O_CREAT, 0);
-	if (sem == SEM_FAILED)
-		sem_unlink("redes_server_sem");
-
-	sem = sem_open("redes_server_sem", O_RDWR | O_CREAT, 0);
 	if (sem == SEM_FAILED) {
-		perror("Erro ao criar semáforo");
-		abort(); // ?
+		sem_unlink("redes_server_sem");
+		sem = sem_open("redes_server_sem", O_RDWR | O_CREAT, 0);
+	}
+
+	if (sem == SEM_FAILED) {
+		close(sockfd);
+		throw runtime_error("Erro ao criar semáforo");
 	}
 
 	semaphore = sem;
+	sem_post(semaphore);
 }
 
 
@@ -57,9 +72,13 @@ void server::start() {
 	addr.sin_port = port;
 	if (bind(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr))
 		< 0) {
-		perror("Erro ao fazer bind() no socket do servidor");
 		sem_destroy(semaphore);
-		abort(); // ?
+		stop();
+
+		if (errno == EADDRINUSE || errno == EINVAL || errno == EFAULT)
+			throw invalid_argument("Erro ao fazer bind()");
+		else
+			throw runtime_error("Erro ao fazer bind()");
 	}
 
 	up = true;
@@ -77,8 +96,6 @@ void server::stop() {
 	up = false;
 	close(sockfd);
 
-	// faz isso e força as threads a terminarem talvez
-	// ou só dá join
 	while (clients.size())
 		close_connection(clients[0]);
 
@@ -103,11 +120,24 @@ int server::wait_connection() {
 	// esses campos de addr podem ser nullptr.
 	sockaddr_in addr;
 	socklen_t addr_size;
-	int new_socket = accept(sockfd, reinterpret_cast<sockaddr*>(&addr), &addr_size);
-	if (new_socket < 0) {
-		perror("Erro ao criar socket de cliente");
-		sem_unlink("redes_server_sem");
-		abort(); // ?
+
+	int new_socket;
+	while(1) {
+		if (!is_up())
+			return -1;
+
+		int new_socket = accept(sockfd, reinterpret_cast<sockaddr*>(&addr), &addr_size);
+		if (new_socket < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+
+			sem_unlink("redes_server_sem");
+			if (errno == EINVAL)
+				throw invalid_argument("Erro ao criar socket de cliente");
+			else
+				throw runtime_error("Erro ao criar socket de cliente");
+		}
+		break;
 	}
 
 	// Adiciona a conexão à lista de clientes conectados.
@@ -134,6 +164,7 @@ void server::close_connection(int fd) {
 			sem_wait(semaphore);
 			clients.erase(clients.begin()+i);
 			sem_post(semaphore);
+			close(fd);
 
 			return;
 		}
@@ -146,6 +177,24 @@ void server::send(int fd, const void* buf, size_t size) {
 }
 
 
-size_t server::receive(int fd, void* buf, size_t max) {
-	return recv(fd, buf, max, 0);
+int server::receive(int fd, void* buf, size_t max) {
+	int result;
+
+	while(1) {
+		if (!is_up())
+			return -2;
+
+		result = recv(fd, buf, max, 0);
+		if (result < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				continue;
+			if (errno == EINVAL)
+				throw invalid_argument("Erro ao receber dados");
+			else
+				throw runtime_error("Erro ao receber dados");
+		}
+		break;
+	}
+
+	return result;
 }

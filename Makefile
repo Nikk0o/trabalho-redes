@@ -9,3 +9,6 @@ gerenciador.out: server.cpp server.hpp protocol.hpp gerenciador.cpp
 
 run:
 	./gerenciador.out $(PORTA)
+
+clean:
+	rm gerenciador.out;

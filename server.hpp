@@ -32,7 +32,7 @@ class server {
 		void close_connection(int);
 
 		void send(int, const void*, std::size_t);
-		std::size_t receive(int, void*, std::size_t);
+		int receive(int, void*, std::size_t);
 };
 
 #define BACKLOG 10
