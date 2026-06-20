@@ -37,32 +37,33 @@ Para testar o ecossistema completo, recomenda-se a utilização de **múltiplas 
 Na raiz do projeto, execute o comando abaixo para compilar o Gerenciador e o Cliente:
 ```bash
 make
-
+```
 ### 2. Inicializando o Servidor
 No primeiro terminal, inicialize o servidor central na porta padrão (configurada no Makefile como 6767):
 ```bash
 make run
-
+```
 ### 3. Conectando os Atuadores (obrigatório antes dos sensores):
 Abra novos terminais e conecte os atuadores da sala para que eles fiquem prontos para receber comandos do gerenciador:
 ```bash
 ./client.out 127.0.0.1 6767 ILUMINACAO
 ./client.out 127.0.0.1 6767 AR_CONDICIONADO
 ./client.out 127.0.0.1 6767 PROJETOR
-
+```
 ### 4. Interagindo com os Sensores:
 Com a sala estruturada, use novos terminais para simular eventos físicos e observar as regras de automação disparadas no servidor e replicadas nos atuadores:
 ```bash
 ./client.out 127.0.0.1 6767 PRESENCA
 ./client.out 127.0.0.1 6767 CARTAO
 ./client.out 127.0.0.1 6767 CHAVE
-
+```
 ### 5. Módulo do Professor:
 A qualquer momento, para extrair a lista de alunos presentes que passaram o cartão, execute em um terminal separado:
 ```bash
 ./client.out 127.0.0.1 6767 PROFESSOR
-
+```
 ## Limpeza dos Arquivos
 Para remover os arquivos compilados (.out) e limpar o diretório de trabalho, utilize:
 ```bash
 make clean
+```
