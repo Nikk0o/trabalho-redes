@@ -21,19 +21,12 @@ server::server(const char* name, int port) {
 	this->name = string(name);
 	this->port = port;
 
-	// Cria o socket para os clientes se conectarem ao
-	// gerenciador.
-	// Socket ipv4 TCP
+	// Cria o socket para os clientes se conectarem ao gerenciador.
+	// Socket IPv4 TCP estruturado em modo BLOQUEANTE (blocking).
 	//
-	// Coloca também o socket em modo non-blocking, para
-	// que as chamadas a recv() e accept() não bloqueiem
-	// threads, assim evitando vazamento de memória quando
-	// terminar o programa.
-
-	// Removendo o SOCK_NONBLOCK do socket() consegui realizar conexões,
-	// mas o funcionamento ainda não está correto
-	// Para testar troque a linha de baixo por 'sockfd = socket(AF_INET, SOCK_STREAM, 0);'
-	sockfd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+	// Mudei para o modo bloqueante para simplificar a lógica de leitura e escrita, 
+	// já que cada cliente terá uma thread dedicada.
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
 	if (sockfd < 0) {
 		if (errno == EACCES || errno == EMFILE
 			|| errno == ENFILE || errno == ENOMEM
@@ -43,15 +36,16 @@ server::server(const char* name, int port) {
 			throw invalid_argument("Erro ao criar socket");
 	}
 
-	// Configura o socket para permitir o reuso do endereço e da porta
+	// Configura o socket para permitir o reuso imediato do endereço e da porta,
+	// evitando o erro de "Address already in use" ao reiniciar o servidor seguidamente.
 	int opt = 1;
 	if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
 		perror("Erro ao configurar SO_REUSEADDR");
 	}
 
-	// Cria um semáforo para que chamadas de função
-	// de abrir e fechar sockets possam ser execu-
-	// tadas em threads diferentes
+	// Cria um semáforo para que chamadas de função de abrir e fechar 
+	// sockets de clientes possam ser executadas de forma segura e síncrona
+	// a partir de threads diferentes (evitando concorrência no vetor 'clients').
 	sem_t* sem = sem_open("redes_server_sem", O_CREAT, 0666, 1);
 	if (sem == SEM_FAILED) {
 		sem_unlink("redes_server_sem");
@@ -65,17 +59,17 @@ server::server(const char* name, int port) {
 
 	semaphore = sem;
 	sem_post(semaphore);
+	up = false;
 }
 
-// Inicia o servidor usando ipv4 e escutando no
-// endereço de loopback.
+// Inicia o servidor vinculando-o à porta especificada e escutando em qualquer interface (INADDR_ANY)
 void server::start() {
 	cout << "Iniciando " << name << "." << std::endl;
 
 	sockaddr_in addr;
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(port); // CORREÇÃO CRUCIAL: Adicionado htons para converter a porta para formato de rede
+	addr.sin_port = htons(port); // Conversão da porta para o formato big-endian da rede
 
 	if (bind(sockfd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
 		sem_unlink("redes_server_sem");
@@ -99,6 +93,7 @@ void server::stop() {
 	up = false;
 	close(sockfd);
 
+	// Fecha ativamente a socket de todos os clientes que ainda estão conectados
 	while (clients.size())
 		close_connection(clients[0]);
 
@@ -117,13 +112,11 @@ int server::wait_connection() {
 		throw runtime_error("Erro ao escutar (listen)");
 	}
 
-	// não sei pra que isso serviria, já que a gente manda com os
-	// file descriptors, não com o ip.
-	// esses campos de addr podem ser nullptr.
-
 	sockaddr_in addr;
 	socklen_t addr_size = sizeof(addr);
 
+	// No modo bloqueante, o accept() suspende a execução da thread principal aqui 
+	// de forma eficiente até que um novo dispositivo cliente solicite uma conexão TCP.
 	int new_socket = accept(sockfd, reinterpret_cast<sockaddr*>(&addr), &addr_size);
 	if (new_socket < 0) {
 		if (errno == EINVAL)
@@ -132,18 +125,18 @@ int server::wait_connection() {
 			throw runtime_error("Erro ao criar socket de cliente");
 	}
 
-	// Adiciona a conexão à lista de clientes conectados.
+	// Adiciona de forma segura a nova conexão à lista de clientes conectados.
 	sem_wait(semaphore);
 	clients.push_back(new_socket);
 	sem_post(semaphore);
 
 	cout << "Conexão estabelecida na socket " << new_socket << "." << std::endl;
-	// Retorna o socket atribuído à conexão estabelecida.
+	
+	// Retorna o file descriptor do socket atribuído à conexão estabelecida.
 	return new_socket;
 }
 
-// Fecha a conexão com um cliente específico.
-// Não sei em que caso seria útil no projeto.
+// Fecha a conexão com um cliente específico, removendo-o da lista monitorada.
 void server::close_connection(int fd) {
 	if (fd == sockfd)
 		return;
@@ -151,7 +144,7 @@ void server::close_connection(int fd) {
 	for (int i = 0; i < clients.size(); i++) {
 		if (clients[i] == fd) {
 			sem_wait(semaphore);
-			clients.erase(clients.begin()+i);
+			clients.erase(clients.begin() + i);
 			sem_post(semaphore);
 			close(fd);
 			return;
@@ -164,6 +157,9 @@ void server::send(int fd, const void* buf, size_t size) {
 }
 
 int server::receive(int fd, void* buf, size_t max) {
+	// Chamada bloqueante para o recv. A thread dedicada a este cliente ficará dormindo 
+	// até que o dispositivo envie dados textuais do protocolo SmartClass.
+	// Se o cliente desconectar de forma limpa, o retorno será 0.
 	int result = recv(fd, buf, max, 0);
 	if (result < 0) {
 		if (errno == EINVAL)

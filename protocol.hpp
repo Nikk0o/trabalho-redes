@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <sstream>
 
 enum alvos {
 	ILUMINACAO,
@@ -10,15 +11,17 @@ enum alvos {
 	AR_CONDICIONADO
 };
 
-// enum packet_type {};
+// Função auxiliar global para extrair o valor após o rótulo (ex: "FUNCAO: SENSOR" -> "SENSOR")
+inline std::string extrair_valor(const std::string& linha, const std::string& rotulo) {
+	if (linha.find(rotulo) == 0) {
+		return linha.substr(rotulo.length());
+	}
+	return "";
+}
 
-	// struct que representa
-	// de um pacote. Precisa
-	// ser convertida antes de
-	// ser enviada.
 struct packet {
 	std::string to_string_header() {
-		return std::string("SMARTCLASS/1.0\n") +
+		return std::string("PROTOCOLO: SMARTCLASS/1.0\n") +
 			   "TIPO_MSG: " +
 			   type_to_string()
 			   + "\n";
@@ -28,18 +31,14 @@ struct packet {
 	virtual std::string to_string() { return ""; }
 };
 
-// conversão de string
-// para struct e vice-versa
-// para cada tipo de pacote
-
 struct req_con : packet {
 	char ip[16];
-	char funcao[16];
+	char funcao[24]; // Aumentado para suportar AR_CONDICIONADO com folga
 
 	std::string type_to_string() override { return "REQ_CON"; }
 	std::string to_string() override {
 		return to_string_header() +
-			   "IP: " + std::string(ip) + "\n" +
+			   "ORIGEM_ID: " + std::string(ip) + "\n" +
 			   "FUNCAO: " + std::string(funcao) + "\n";
 	}
 };
@@ -50,7 +49,7 @@ struct con_ack : packet {
 	std::string type_to_string() override { return "CON_ACK"; }
 	std::string to_string() override {
 		return to_string_header() +
-			   "STATUS: " + std::string(status ? "SUCESSO" : "FALHA") + "\n";
+			   "STATUS: " + std::string(status ? "SUCESS" : "FAILED") + "\n";
 	}
 };
 
@@ -60,7 +59,7 @@ struct sens_presenca : packet {
 	std::string type_to_string() override { return "SENS_PRESENCA"; }
 	std::string to_string() override {
 		return to_string_header() +
-			   "DETECTADO: " + std::string(detectado ? "SIM" : "NAO") + "\n";
+			   "DETECTADO: " + std::string(detectado ? "TRUE" : "FALSE") + "\n";
 	}
 };
 
@@ -82,7 +81,7 @@ struct sens_chave : packet {
 	std::string type_to_string() override { return "SENS_CHAVE"; }
 	std::string to_string() override {
 		return to_string_header() +
-			   "ESTADO: " + std::string(estado ? "ABERTA" : "FECHADA") + "\n";
+			   "ESTADO: " + std::string(estado ? "ON" : "OFF") + "\n";
 	}
 };
 
@@ -100,30 +99,14 @@ struct comando : packet {
 		}
 		return to_string_header() +
 			   "ALVO: " + alvo_str + "\n" +
-			   "ACAO: " + std::string(acao ? "LIGAR" : "DESLIGAR") + "\n";
+			   "ACAO: " + std::string(acao ? "ON" : "OFF") + "\n";
 	}
 };
 
 struct get_presenca : packet {
-
 	std::string type_to_string() override { return "GET_PRESENCA"; }
 	std::string to_string() override {
 		return to_string_header();
-	}
-};
-
-struct resp_presenca : packet {
-	int total_alunos;
-	std::vector<std::pair<int, std::string>> alunos;
-
-	std::string type_to_string() override { return "RESP_PRESENCA"; }
-	std::string to_string() override {
-		std::string result = to_string_header() +
-							 "TOTAL_ALUNOS: " + std::to_string(total_alunos) + "\n";
-		for (const auto& aluno : alunos) {
-			result += "ALUNO: " + std::to_string(aluno.first) + " - " + aluno.second + "\n";
-		}
-		return result;
 	}
 };
 
