@@ -149,6 +149,9 @@ void gerenciador::send_packet(int fd, packet& p) {
 void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 	cout << "[THREAD] Monitorando dispositivo: " << funcao << " na socket " << client_sock << endl;
 
+	bool presenca_detectada = false;
+	int segundos = 0;
+
 	while (true) {
 		unique_ptr<packet> p = ger->get_packet(client_sock);
 		if (!p) {
@@ -166,7 +169,7 @@ void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 		// CORREÇÃO: Usando dynamic_cast nativo com ponteiros brutos para extrair das unique_ptrs com segurança
 		if (tipo == "SENS_PRESENCA") {
 			sens_presenca* p_presenca = dynamic_cast<sens_presenca*>(p.get());
-			if (p_presenca && p_presenca->detectado) {
+			if (p_presenca && p_presenca->detectado && !presenca_detectada) {
 				cout << "[AUTOMAÇÃO] Presença Detectada! Ligando aparelhos..." << endl;
 				
 				if (socket_iluminacao != -1) {
@@ -177,6 +180,26 @@ void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 					comando cmd; cmd.alvo = AR_CONDICIONADO; cmd.acao = true;
 					ger->send_packet(socket_ar, cmd);
 				}
+
+				presenca_detectada = true;
+				segundos = 0;
+			}
+			else if (p_presenca && !p_presenca->detectado && presenca_detectada && ++segundos >= 15) {
+				// A contagem de segundos é sincronizada com o recebimento de pacotes
+				// corretos no tempo esperado. Isso é proposital pois o projeto é pequeno.
+				cout << "[AUTOMAÇÃo] Presença não Detectada por 15 minutos! Desligando aparelhos..." << endl;
+
+				if (socket_iluminacao != -1) {
+					comando cmd; cmd.alvo = ILUMINACAO; cmd.acao = false;
+					ger->send_packet(socket_iluminacao, cmd);
+				}
+				if (socket_ar != -1) {
+					comando cmd; cmd.alvo = AR_CONDICIONADO; cmd.acao = false;
+					ger->send_packet(socket_ar, cmd);
+				}
+
+				presenca_detectada = false;
+				segundos = 0;
 			}
 		}
 		else if (tipo == "SENS_CARTAO") {

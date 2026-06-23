@@ -1,3 +1,4 @@
+#include <ctime>
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -5,6 +6,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <memory>
+#include <thread>
 #include "protocol.hpp" 
 
 using namespace std;
@@ -79,22 +81,40 @@ int conectar_e_autenticar(const string& ip, int porta, const string& funcao) {
 
 // === COMPORTAMENTOS DOS COMPONENTES ===
 
+void manda_presenca_periodico(int sock, sens_presenca &presenca) {
+	clock_t tempo_old = 0, tempo = 0;
+
+	while (true) {
+		tempo = clock();
+		if ((tempo - tempo_old) / CLOCKS_PER_SEC >= 1) {
+			enviar_pacote(sock, presenca);
+			tempo_old = tempo;
+		}
+	}
+}
+
 void rodar_sensor_presenca(int sock) {
     cout << "=== MÓDULO: SENSOR DE PRESENÇA ===" << endl;
-    cout << "Digite '1' para simular PRESENÇA DETECTADA ou '0' para encerrar." << endl;
-    
-    // O sensor de presença fica em loop aguardando o 
+    cout << "Digite '1' para simular PRESENÇA DETECTADA ou '0' para simular PRESENÇA NÃO DETECTADA ou '2' para sair." << endl;
+
+	sens_presenca presenca;
+	presenca.detectado = false;
+
+	thread manda_presenca([sock, &presenca]() { manda_presenca_periodico(sock, presenca); });
+	manda_presenca.detach();
+
+	// O sensor de presença fica em loop aguardando o 
     // usuário simular a detecção de presença.
-    while (true) {
+	while (true) {
         string entrada;
         cin >> entrada;
         if (entrada == "1") {
-            sens_presenca presenca;
             presenca.detectado = true;
-            enviar_pacote(sock, presenca);
         } else if (entrada == "0") {
-            break;
-        }
+            presenca.detectado = false;
+        } else if (entrada == "2") {
+			break;
+		}
     }
 }
 
