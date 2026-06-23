@@ -43,6 +43,7 @@ No primeiro terminal, inicialize o servidor central na porta padrão (configurad
 ```bash
 make run
 ```
+Obs: o gerenciador desliga a iluminação e o ar condicionado apenas 9 segundos depois de não detectar presença na sala ao invés de 15 minutos. Isso foi feito apenas para facilitar os testes.
 ### 3. Conectando os Atuadores (obrigatório antes dos sensores):
 Abra novos terminais e conecte os atuadores da sala para que eles fiquem prontos para receber comandos do gerenciador:
 ```bash
