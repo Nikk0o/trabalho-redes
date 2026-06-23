@@ -150,6 +150,7 @@ void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 	cout << "[THREAD] Monitorando dispositivo: " << funcao << " na socket " << client_sock << endl;
 
 	bool presenca_detectada = false;
+	bool chave_ligada_anterior = false;
 	int segundos = 0;
 
 	while (true) {
@@ -215,13 +216,21 @@ void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 			sens_chave* p_chave = dynamic_cast<sens_chave*>(p.get());
 			if (p_chave) {
 				if (p_chave->estado) { 
-					cout << "[AUTOMAÇÃO] Chave ligada: Ativando Projetor e Apagando Luzes." << endl;
-					if (socket_projetor != -1) { comando cmd; cmd.alvo = PROJETOR; cmd.acao = true; ger->send_packet(socket_projetor, cmd); }
-					if (socket_iluminacao != -1) { comando cmd; cmd.alvo = ILUMINACAO; cmd.acao = false; ger->send_packet(socket_iluminacao, cmd); }
-				} else { 
-					cout << "[AUTOMAÇÃO] Chave desligada: Desativando Projetor e Acendendo Luzes." << endl;
-					if (socket_projetor != -1) { comando cmd; cmd.alvo = PROJETOR; cmd.acao = false; ger->send_packet(socket_projetor, cmd); }
-					if (socket_iluminacao != -1) { comando cmd; cmd.alvo = ILUMINACAO; cmd.acao = true; ger->send_packet(socket_iluminacao, cmd); }
+					if (!chave_ligada_anterior) {
+						cout << "[AUTOMAÇÃO] Chave ligada: Ativando Projetor e Apagando Luzes." << endl;
+						if (socket_projetor != -1) { comando cmd; cmd.alvo = PROJETOR; cmd.acao = true; ger->send_packet(socket_projetor, cmd); }
+						if (socket_iluminacao != -1) { comando cmd; cmd.alvo = ILUMINACAO; cmd.acao = false; ger->send_packet(socket_iluminacao, cmd); }
+					
+						chave_ligada_anterior = true;
+					}
+				}else { 
+					if (chave_ligada_anterior) {
+						cout << "[AUTOMAÇÃO] Chave desligada: Desativando Projetor e Acendendo Luzes." << endl;
+						if (socket_projetor != -1) { comando cmd; cmd.alvo = PROJETOR; cmd.acao = false; ger->send_packet(socket_projetor, cmd); }
+						if (socket_iluminacao != -1) { comando cmd; cmd.alvo = ILUMINACAO; cmd.acao = true; ger->send_packet(socket_iluminacao, cmd); }
+
+						chave_ligada_anterior = false;
+					}
 				}
 			}
 		}
