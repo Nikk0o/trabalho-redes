@@ -103,6 +103,17 @@ void manda_presenca_periodico(int sock, sens_presenca &presenca) {
 	}
 }
 
+void manda_chave_periodico(int sock, sens_chave &chave) {
+    clock_t tempo_old = 0, tempo = 0;
+    while (true) {
+        tempo = clock();
+        if ((tempo - tempo_old) / CLOCKS_PER_SEC >= 1) {
+            enviar_pacote(sock, chave);
+            tempo_old = tempo;
+        }
+    }
+}
+
 void rodar_sensor_presenca(int sock) {
     cout << "=== MÓDULO: SENSOR DE PRESENÇA ===" << endl;
     cout << "Digite '1' para simular PRESENÇA DETECTADA ou '0' para simular PRESENÇA NÃO DETECTADA ou '2' para sair." << endl;
@@ -146,6 +157,30 @@ void rodar_leitor_cartao(int sock) {
         cartao.nome = nome;
         
         enviar_pacote(sock, cartao);
+    }
+}
+
+void rodar_sensor_chave(int sock) {
+    cout << "=== MÓDULO: SENSOR DA CHAVE DO PROJETOR ===" << endl;
+    cout << "Digite '1' para ligar o MODO AULA (Chave ON) ou '0' para desligar (Chave OFF) ou '2' para sair." << endl;
+
+    sens_chave chave;
+    chave.estado = false; // Começa desligada (OFF)
+
+    // Dispara a thread para enviar periodicamente o estado atual para o servidor
+    thread manda_chave([sock, &chave]() { manda_chave_periodico(sock, chave); });
+    manda_chave.detach();
+
+    while (true) {
+        string entrada;
+        cin >> entrada;
+        if (entrada == "1") {
+            chave.estado = true;
+        } else if (entrada == "0") {
+            chave.estado = false;
+        } else if (entrada == "2") {
+            break;
+        }
     }
 }
 
@@ -213,6 +248,8 @@ int main(int argc, char* argv[]) {
         rodar_sensor_presenca(sock);
     } else if (tipo == "CARTAO") {
         rodar_leitor_cartao(sock);
+    } else if (tipo == "CHAVE") {
+        rodar_sensor_chave(sock);
     } else if (tipo == "ILUMINACAO" || tipo == "PROJETOR" || tipo == "AR_CONDICIONADO") {
         rodar_atuador(sock, tipo);
     } else if (tipo == "PROFESSOR") {
