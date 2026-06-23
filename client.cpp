@@ -17,7 +17,17 @@ using namespace std;
 void enviar_pacote(int fd, packet& p) {
     string p_str = p.to_string();
     send(fd, p_str.c_str(), p_str.size(), 0);
-    cout << "[LOG] Mensagem Enviada:\n" << p_str << "-------------------" << endl;
+    
+    // Variáveis estáticas retêm o valor entre as chamadas da função
+    static string ultimo_conteudo_enviado = "";
+
+    // Só imprime na tela se a string atual for diferente da última que enviamos
+    if (p_str != ultimo_conteudo_enviado) {
+        cout << "[LOG] Mensagem Enviada:\n" << p_str << "-------------------" << endl;
+        ultimo_conteudo_enviado = p_str; // Atualiza o estado
+    }
+
+    //cout << "[LOG] Mensagem Enviada:\n" << p_str << "-------------------" << endl;
 }
 
 // Função para conectar ao gerenciador e realizar o Handshakeobrigatório

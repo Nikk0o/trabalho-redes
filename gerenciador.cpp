@@ -164,7 +164,7 @@ void thread_cliente_func(gerenciador* ger, int client_sock, string funcao) {
 		}
 
 		string tipo = p->type_to_string();
-		cout << "[LOG] Pacote recebido de " << funcao << ": " << tipo << endl;
+		// cout << "[LOG] Pacote recebido de " << funcao << ": " << tipo << endl;
 
 		// CORREÇÃO: Usando dynamic_cast nativo com ponteiros brutos para extrair das unique_ptrs com segurança
 		if (tipo == "SENS_PRESENCA") {
